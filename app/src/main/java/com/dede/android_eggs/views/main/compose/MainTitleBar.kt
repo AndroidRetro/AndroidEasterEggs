@@ -3,7 +3,7 @@
 package com.dede.android_eggs.views.main.compose
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -17,12 +17,16 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBarDefaults.pinnedScrollBehavior
+import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
@@ -41,44 +45,61 @@ private const val TAG_SETTINGS = "Settings"
 @Composable
 @Preview
 fun MainTitleBar(
-    searchBarVisibleState: MutableState<Boolean> = mutableStateOf(false)
+    scrollBehavior: TopAppBarScrollBehavior = pinnedScrollBehavior(),
+    searchBarVisibleState: MutableState<Boolean> = mutableStateOf(false),
 ) {
     val fm: FragmentManager? = LocalFragmentManager.currentOutInspectionMode
     var searchBarVisible by searchBarVisibleState
 
-    val scope = rememberCoroutineScope()
-    var startRotate by rememberSaveable { mutableStateOf(false) }
-    val rotateAnim by animateFloatAsState(
-        targetValue = if (startRotate) 360f else 0f,
-        animationSpec = tween(500),
-        label = "setting_icon_rotate",
-    )
+    val fragment = fm?.findFragmentByTag(TAG_SETTINGS) as? SettingsFragment
+    var showSettings by remember { mutableStateOf(fragment != null) }
+    var settingRotate by remember { mutableFloatStateOf(0f) }
 
-    fun showSettings() {
-        if (fm == null) return
-        SettingsFragment().apply {
-            onPreDismiss = {
-                startRotate = false
-            }
-        }.show(fm, TAG_SETTINGS)
-        startRotate = true
+    val onSlideCallback = remember {
+        { p: Float -> settingRotate = p * 360f }
+    }
+    val onDismissCallback = remember {
+        { showSettings = false }
+    }
+    if (fragment != null) {
+        fragment.onSlide = onSlideCallback
+        fragment.onDismiss = onDismissCallback
     }
 
-    if (startRotate) {
-        val restored = fm?.findFragmentByTag(TAG_SETTINGS) as? SettingsFragment
-        if (restored != null) {
-            restored.onPreDismiss = {
-                startRotate = false
+    LaunchedEffect(showSettings) {
+        if (showSettings) {
+            animate(0f, 360f, animationSpec = tween(500)) { value, _ ->
+                settingRotate = value
             }
         }
     }
 
+    val scope = rememberCoroutineScope()
+
+    fun showSettings() {
+        scope.launch {
+            if (searchBarVisible) {
+                // hide searchBar
+                searchBarVisible = false
+                // await searchBar dismiss
+                delay(200)
+            }
+            if (fm == null) return@launch
+            SettingsFragment().apply {
+                onSlide = onSlideCallback
+                onDismiss = onDismissCallback
+            }.show(fm, TAG_SETTINGS)
+            showSettings = true
+        }
+    }
+
     CenterAlignedTopAppBar(
+        scrollBehavior = scrollBehavior,
         title = {
             Text(
                 text = stringResource(R.string.app_name),
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
             )
         },
         actions = {
@@ -102,21 +123,13 @@ fun MainTitleBar(
 
             IconButton(
                 onClick = {
-                    scope.launch {
-                        if (searchBarVisible) {
-                            // hide searchBar
-                            searchBarVisible = false
-                            // await searchBar dismiss
-                            delay(200)
-                        }
-                        showSettings()
-                    }
+                    showSettings()
                 },
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Settings,
                     contentDescription = stringResource(R.string.label_settings),
-                    modifier = Modifier.rotate(rotateAnim)
+                    modifier = Modifier.rotate(settingRotate)
                 )
             }
         }
